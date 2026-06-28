@@ -2,27 +2,42 @@ import yt_dlp
 import os
 import sys
 import shutil
+import socket
+import time
 import threading
+import platform
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 
 
-# Поиск ffmpeg
 def find_ffmpeg():
-    # Проверяем системный ffmpeg
     system_ffmpeg = shutil.which("ffmpeg")
     if system_ffmpeg:
         return os.path.dirname(system_ffmpeg)
 
-    # Проверяем локальный ffmpeg
-    local_paths = [
-        os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg", "bin"),
-        os.path.join(os.getcwd(), "ffmpeg", "bin"),
+    possible_paths = [
         r"C:\ffmpeg\bin",
+        r"C:\ffmpeg\ffmpeg-8.1.1-full_build\bin",
+        r"C:\Program Files\ffmpeg\bin",
     ]
-    for path in local_paths:
+
+    appdata = os.path.expanduser(r"~\AppData\Local\Microsoft\WinGet\Packages")
+    if os.path.exists(appdata):
+        for folder in os.listdir(appdata):
+            if folder.startswith("Gyan.FFmpeg"):
+                bin_path = os.path.join(appdata, folder)
+                for root, dirs, files in os.walk(bin_path):
+                    if "ffmpeg.exe" in files and root.endswith("bin"):
+                        possible_paths.append(root)
+                        break
+
+    for path in possible_paths:
         if os.path.exists(os.path.join(path, "ffmpeg.exe")):
             return path
+
+    local_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ffmpeg", "bin")
+    if os.path.exists(os.path.join(local_path, "ffmpeg.exe")):
+        return local_path
 
     return None
 
@@ -33,18 +48,44 @@ FFMPEG_PATH = find_ffmpeg()
 class VideoDownloaderApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("Загрузчик видео / аудио")
-        self.root.geometry("800x700")
+        self.root.title("Загрузчик медиа")
+        self.root.geometry("700x600")
         self.root.resizable(True, True)
         self.root.minsize(600, 500)
 
-        self.bg_color = "#1a1a2e"
-        self.card_color = "#16213e"
-        self.fg_color = "#e0e0e0"
-        self.accent = "#e94560"
-        self.accent_hover = "#ff6b81"
-        self.success_color = "#2ecc71"
-        self.warning_color = "#f39c12"
+        is_mac = platform.system() == "Darwin"
+        default_font = "SF Pro Text" if is_mac else "Segoe UI"
+
+        if is_mac:
+            self.accent = "#007AFF"
+            self.accent_hover = "#3399FF"
+            self.bg_color = "#F5F5F5"
+            self.card_color = "#FFFFFF"
+            self.fg_color = "#1D1D1F"
+            self.warning_color = "#FF9500"
+            self.success_color = "#34C759"
+            entry_bg = "#E5E5EA"
+            entry_fg = "#1D1D1F"
+            menu_bg = "#FFFFFF"
+            menu_fg = "#1D1D1F"
+            radio_bg = "#FFFFFF"
+            radio_fg = "#1D1D1F"
+            select_color = "#FFFFFF"
+        else:
+            self.accent = "#e94560"
+            self.accent_hover = "#ff6b81"
+            self.bg_color = "#1a1a2e"
+            self.card_color = "#16213e"
+            self.fg_color = "#e0e0e0"
+            self.warning_color = "#f39c12"
+            self.success_color = "#2ecc71"
+            entry_bg = "#0f3460"
+            entry_fg = "#e0e0e0"
+            menu_bg = "#0f3460"
+            menu_fg = "#e0e0e0"
+            radio_bg = "#16213e"
+            radio_fg = "#e0e0e0"
+            select_color = "#16213e"
 
         self.root.configure(bg=self.bg_color)
 
@@ -52,23 +93,21 @@ class VideoDownloaderApp:
         title_frame = tk.Frame(root, bg=self.bg_color)
         title_frame.pack(pady=(20, 5), fill="x")
 
-        title = tk.Label(
+        tk.Label(
             title_frame, text="⬇ Загрузчик медиа",
-            font=("Segoe UI", 20, "bold"),
+            font=(default_font, 20, "bold"),
             bg=self.bg_color, fg=self.accent
-        )
-        title.pack()
+        ).pack()
 
-        subtitle = tk.Label(
+        tk.Label(
             title_frame,
-            text="YouTube • Rutube • VK • Twitch и сотни других сайтов \n из-за работы DPI в РФ могут возникнуть ошибки 403 и сброс соединения,\nпопробуйте явно скачать видео с rutube и др. так же попробуйте повторно нажать скачать",
-            font=("Segoe UI", 10),
+            text="YouTube • Rutube • VK • Twitch и сотни других сайтов",
+            font=(default_font, 10),
             bg=self.bg_color, fg="#888888"
-        )
-        subtitle.pack()
+        ).pack()
 
         # Основной контейнер
-        main_frame = tk.Frame(root, bg=self.card_color, bd=0, highlightthickness=0)
+        main_frame = tk.Frame(root, bg=self.card_color, bd=0)
         main_frame.pack(pady=10, padx=20, fill="both", expand=True)
 
         # Секция: Ссылка
@@ -77,16 +116,16 @@ class VideoDownloaderApp:
 
         tk.Label(
             link_section, text="🔗 Ссылка на видео:",
-            font=("Segoe UI", 12, "bold"),
+            font=(default_font, 12, "bold"),
             bg=self.card_color, fg=self.fg_color
         ).pack(anchor="w")
 
         self.link_entry = tk.Entry(
             link_section,
-            font=("Segoe UI", 11),
-            bg="#0f3460",
-            fg=self.fg_color,
-            insertbackground=self.fg_color,
+            font=(default_font, 11),
+            bg=entry_bg,
+            fg=entry_fg,
+            insertbackground=entry_fg,
             relief="flat",
             bd=10
         )
@@ -94,7 +133,7 @@ class VideoDownloaderApp:
         self.link_entry.focus_set()
 
         # Контекстное меню
-        self.context_menu = tk.Menu(self.link_entry, tearoff=0, bg="#0f3460", fg=self.fg_color)
+        self.context_menu = tk.Menu(self.link_entry, tearoff=0, bg=menu_bg, fg=menu_fg)
         self.context_menu.add_command(label="📋 Вставить", command=self.paste_text)
         self.context_menu.add_command(label="✂️ Вырезать", command=self.cut_text)
         self.context_menu.add_command(label="📄 Копировать", command=self.copy_text)
@@ -102,16 +141,16 @@ class VideoDownloaderApp:
         self.context_menu.add_command(label="🗑️ Очистить", command=self.clear_text)
 
         self.link_entry.bind("<Button-3>", self.show_context_menu)
+        self.link_entry.bind("<Button-2>", self.show_context_menu)
         self.link_entry.bind("<Control-v>", self.paste_text)
         self.link_entry.bind("<Control-V>", self.paste_text)
 
-        hint = tk.Label(
+        tk.Label(
             link_section,
             text="💡 ПКМ → Вставить  |  Ctrl+V",
-            font=("Segoe UI", 8),
+            font=(default_font, 8),
             bg=self.card_color, fg="#666666"
-        )
-        hint.pack(anchor="w", pady=(2, 0))
+        ).pack(anchor="w", pady=(2, 0))
 
         # Секция: Формат
         format_section = tk.Frame(main_frame, bg=self.card_color)
@@ -119,7 +158,7 @@ class VideoDownloaderApp:
 
         tk.Label(
             format_section, text="🎯 Формат:",
-            font=("Segoe UI", 12, "bold"),
+            font=(default_font, 12, "bold"),
             bg=self.card_color, fg=self.fg_color
         ).pack(anchor="w")
 
@@ -132,10 +171,10 @@ class VideoDownloaderApp:
             radio_frame,
             text="🎬 Видео (MP4) — до 1080p",
             variable=self.format_var, value="mp4",
-            font=("Segoe UI", 11),
-            bg=self.card_color, fg=self.fg_color,
-            selectcolor=self.card_color,
-            activebackground=self.card_color,
+            font=(default_font, 11),
+            bg=radio_bg, fg=radio_fg,
+            selectcolor=select_color,
+            activebackground=radio_bg,
             activeforeground=self.accent
         )
         self.mp4_radio.pack(anchor="w", pady=(0, 5))
@@ -144,23 +183,21 @@ class VideoDownloaderApp:
             radio_frame,
             text="🎵 Аудио (MP3) — 192 kbps",
             variable=self.format_var, value="mp3",
-            font=("Segoe UI", 11),
-            bg=self.card_color, fg=self.fg_color,
-            selectcolor=self.card_color,
-            activebackground=self.card_color,
+            font=(default_font, 11),
+            bg=radio_bg, fg=radio_fg,
+            selectcolor=select_color,
+            activebackground=radio_bg,
             activeforeground=self.accent
         )
         self.mp3_radio.pack(anchor="w")
 
-        # Предупреждение, если нет ffmpeg
         if not FFMPEG_PATH:
-            self.ffmpeg_warning = tk.Label(
+            tk.Label(
                 format_section,
                 text="⚠️ ffmpeg не найден! MP3 и Full HD недоступны.",
-                font=("Segoe UI", 9),
+                font=(default_font, 9),
                 bg=self.card_color, fg=self.warning_color
-            )
-            self.ffmpeg_warning.pack(anchor="w", pady=(5, 0))
+            ).pack(anchor="w", pady=(5, 0))
             self.mp3_radio.config(state="disabled")
 
         # Секция: Папка
@@ -169,7 +206,7 @@ class VideoDownloaderApp:
 
         tk.Label(
             folder_section, text="📁 Папка для сохранения:",
-            font=("Segoe UI", 12, "bold"),
+            font=(default_font, 12, "bold"),
             bg=self.card_color, fg=self.fg_color
         ).pack(anchor="w")
 
@@ -181,39 +218,59 @@ class VideoDownloaderApp:
         self.folder_entry = tk.Entry(
             folder_select_frame,
             textvariable=self.folder_path,
-            font=("Segoe UI", 10),
-            bg="#0f3460", fg="#888888",
+            font=(default_font, 10),
+            bg=entry_bg, fg="#888888",
             relief="flat", bd=8,
             state="readonly"
         )
         self.folder_entry.pack(side="left", fill="x", expand=True)
 
-        browse_btn = tk.Button(
+        tk.Button(
             folder_select_frame,
             text="📂 Обзор",
             command=self.browse_folder,
-            font=("Segoe UI", 10),
-            bg="#0f3460", fg=self.fg_color,
+            font=(default_font, 10),
+            bg=entry_bg, fg=entry_fg,
             relief="flat", bd=8,
             cursor="hand2",
-            activebackground="#1a1a4e",
-            activeforeground=self.fg_color
-        )
-        browse_btn.pack(side="right", padx=(8, 0))
+            activebackground=self.accent_hover,
+            activeforeground="#ffffff"
+        ).pack(side="right", padx=(8, 0))
 
-        # Кнопка скачивания
+        # Кнопки
+        button_frame = tk.Frame(main_frame, bg=self.card_color)
+        button_frame.pack(pady=20)
+
         self.download_btn = tk.Button(
-            main_frame,
+            button_frame,
             text="⬇ СКАЧАТЬ",
             command=self.start_download,
-            font=("Segoe UI", 14, "bold"),
+            font=(default_font, 14, "bold"),
             bg=self.accent, fg="#ffffff",
             relief="flat", bd=12,
             cursor="hand2",
             activebackground=self.accent_hover,
-            activeforeground="#ffffff"
+            activeforeground="#ffffff",
+            highlightthickness=0,
+            borderwidth=0
         )
-        self.download_btn.pack(pady=20, ipadx=60)
+        self.download_btn.pack(side="left", ipadx=30, padx=(0, 10))
+
+        self.cancel_btn = tk.Button(
+            button_frame,
+            text="✕ ОТМЕНА",
+            command=self.cancel_download,
+            font=(default_font, 14, "bold"),
+            bg="#555555", fg="#ffffff",
+            relief="flat", bd=12,
+            cursor="hand2",
+            activebackground="#777777",
+            activeforeground="#ffffff",
+            highlightthickness=0,
+            borderwidth=0,
+            state="disabled"
+        )
+        self.cancel_btn.pack(side="left", ipadx=30)
 
         # Статус
         self.status_frame = tk.Frame(main_frame, bg=self.card_color)
@@ -222,7 +279,7 @@ class VideoDownloaderApp:
         self.status_label = tk.Label(
             self.status_frame,
             text="✅ Готов к загрузке",
-            font=("Segoe UI", 10),
+            font=(default_font, 10),
             bg=self.card_color, fg=self.success_color
         )
         self.status_label.pack(anchor="w")
@@ -234,8 +291,7 @@ class VideoDownloaderApp:
         )
 
         self.download_thread = None
-
-        # Привязка горячих клавиш
+        self.is_cancelled = False
         self.root.bind('<Return>', lambda e: self.start_download())
 
     def show_context_menu(self, event):
@@ -250,8 +306,7 @@ class VideoDownloaderApp:
             if clipboard_text:
                 if self.link_entry.selection_present():
                     self.link_entry.delete(tk.SEL_FIRST, tk.SEL_LAST)
-                cursor_pos = self.link_entry.index(tk.INSERT)
-                self.link_entry.insert(cursor_pos, clipboard_text)
+                self.link_entry.insert(self.link_entry.index(tk.INSERT), clipboard_text)
         except:
             pass
         return "break"
@@ -259,9 +314,8 @@ class VideoDownloaderApp:
     def copy_text(self, event=None):
         try:
             if self.link_entry.selection_present():
-                selected_text = self.link_entry.selection_get()
                 self.root.clipboard_clear()
-                self.root.clipboard_append(selected_text)
+                self.root.clipboard_append(self.link_entry.selection_get())
         except:
             pass
         return "break"
@@ -269,9 +323,8 @@ class VideoDownloaderApp:
     def cut_text(self, event=None):
         try:
             if self.link_entry.selection_present():
-                selected_text = self.link_entry.selection_get()
                 self.root.clipboard_clear()
-                self.root.clipboard_append(selected_text)
+                self.root.clipboard_append(self.link_entry.selection_get())
                 self.link_entry.delete(tk.SEL_FIRST, tk.SEL_LAST)
         except:
             pass
@@ -285,19 +338,53 @@ class VideoDownloaderApp:
         if folder:
             self.folder_path.set(folder)
 
+    def update_status(self, text, color=None):
+        if color is None:
+            color = self.warning_color
+        self.root.after(0, lambda: self.status_label.config(text=text, fg=color))
+
+    def cancel_download(self):
+        self.is_cancelled = True
+        self.update_status("⏹ Отмена...", self.warning_color)
+        self.cancel_btn.config(state="disabled")
+
+    def reset_ui(self):
+        self.download_btn.config(state="normal", text="⬇ СКАЧАТЬ")
+        self.cancel_btn.config(state="disabled")
+        self.progress_bar.stop()
+        self.progress_bar.pack_forget()
+        self.is_cancelled = False
+
+    def warmup_connection(self):
+        warmup_hosts = [
+            ("rutube.ru", 443),
+            ("vk.ru", 443),
+            ("ya.ru", 443),
+            ("mail.ru", 443),
+        ]
+        for host, port in warmup_hosts:
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.settimeout(2)
+                s.connect((host, port))
+                s.close()
+            except:
+                pass
+
     def start_download(self):
         url = self.link_entry.get().strip()
         if not url:
-            messagebox.showwarning("Пустая ссылка", "Пожалуйста, вставьте ссылку на видео.")
+            messagebox.showwarning("Пустая ссылка", "Вставьте ссылку на видео.")
             self.link_entry.focus_set()
             return
 
+        self.is_cancelled = False
         self.download_btn.config(state="disabled", text="⏳ ЗАГРУЗКА...")
+        self.cancel_btn.config(state="normal")
         self.progress_bar.pack(fill="x", pady=(8, 0))
         self.progress_bar.start()
         self.status_label.config(text="🔄 Подготовка...", fg=self.warning_color)
 
-        # ПРОГРЕВ ДЛЯ YOUTUBE
         if "youtube.com" in url or "youtu.be" in url:
             self.warmup_connection()
 
@@ -326,14 +413,11 @@ class VideoDownloaderApp:
                 }],
                 'progress_hooks': [self.progress_hook],
                 'quiet': True,
-                # Упорные ретраи
-                'extractor_retries': 20,  # Ретраи получения метаданных
-                'retries': 20,  # Ретраи скачивания
-                'fragment_retries': 20,  # Ретраи фрагментов (важно для DPI!)
-                'retry_sleep_functions': {
-                    'http': lambda n: 3,  # Ждать 3 сек между ретраями
-                    'fragment': lambda n: 3,
-                },
+                'nocheckcertificate': True,
+                'extractor_retries': 10,
+                'retries': 10,
+                'fragment_retries': 10,
+                'retry_sleep_functions': {'http': lambda n: 3, 'fragment': lambda n: 3},
                 'socket_timeout': 30,
                 'force_ipv4': True,
             }
@@ -345,77 +429,102 @@ class VideoDownloaderApp:
                 'merge_output_format': 'mp4',
                 'progress_hooks': [self.progress_hook],
                 'quiet': True,
-                # Упорные ретраи
-                'extractor_retries': 20,  # Ретраи получения метаданных
-                'retries': 20,  # Ретраи скачивания
-                'fragment_retries': 20,  # Ретраи фрагментов (важно для DPI!)
-                'retry_sleep_functions': {
-                    'http': lambda n: 3,  # Ждать 3 сек между ретраями
-                    'fragment': lambda n: 3,
-                },
+                'nocheckcertificate': True,
+                'extractor_retries': 10,
+                'retries': 10,
+                'fragment_retries': 10,
+                'retry_sleep_functions': {'http': lambda n: 3, 'fragment': lambda n: 3},
                 'socket_timeout': 30,
                 'force_ipv4': True,
             }
         else:
-            # Без ffmpeg — только готовые файлы до 720p
             ydl_opts = {
                 'format': 'best[height<=720]',
                 'outtmpl': f'{output_dir}/%(title)s.%(ext)s',
                 'progress_hooks': [self.progress_hook],
                 'quiet': True,
-                # Упорные ретраи
-                'extractor_retries': 20,  # Ретраи получения метаданных
-                'retries': 20,  # Ретраи скачивания
-                'fragment_retries': 20,  # Ретраи фрагментов (важно для DPI!)
-                'retry_sleep_functions': {
-                    'http': lambda n: 3,  # Ждать 3 сек между ретраями
-                    'fragment': lambda n: 3,
-                },
+                'nocheckcertificate': True,
+                'extractor_retries': 10,
+                'retries': 10,
+                'fragment_retries': 10,
+                'retry_sleep_functions': {'http': lambda n: 3, 'fragment': lambda n: 3},
                 'socket_timeout': 30,
                 'force_ipv4': True,
             }
 
-        try:
-            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-                self.update_status("🔄 Подключение к серверу...", self.warning_color)
-                info = ydl.extract_info(url, download=False)
-                title = info.get('title', 'Неизвестное название')
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            if self.is_cancelled:
+                self.update_status("⏹ Отменено", self.warning_color)
+                self.root.after(0, self.reset_ui)
+                return
 
-                self.update_status(f"⬇ Загрузка: {title[:50]}...", self.warning_color)
-                ydl.download([url])
+            try:
+                with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                    self.update_status(f"🔄 Попытка {attempt}/{max_attempts}...")
 
-            self.update_status("✅ Готово!", self.success_color)
-            self.root.after(0, lambda: messagebox.showinfo(
-                "Успешно",
-                f"✅ Видео сохранено!\n\n📁 Папка:\n{output_dir}"
-            ))
+                    if attempt > 1 and ("youtube.com" in url or "youtu.be" in url):
+                        self.update_status("🔄 Обход блокировки...")
+                        self.warmup_connection()
+                        time.sleep(2)
 
-        except Exception as e:
-            error_msg = str(e)
-            if "HTTP Error 403" in error_msg:
-                error_msg = "Доступ запрещён (403). Видео может быть приватным или заблокированным."
-            elif "HTTP Error 429" in error_msg:
-                error_msg = "Слишком много запросов. Попробуйте через минуту."
-            elif "Private video" in error_msg:
-                error_msg = "Это приватное видео. Доступ ограничен."
-            elif any(x in error_msg for x in ["Remote end closed", "разорвал", "timeout", "timed out"]):
-                error_msg = (
-                    "Не удалось подключиться к серверу.\n\n"
-                    "Возможные причины:\n"
-                    "• Сайт заблокирован (YouTube — нужен VPN)\n"
-                    "• Проблемы с интернетом\n"
-                    "• Попробуйте другой видеохостинг (Rutube/VK)"
-                )
-            elif "ffmpeg" in error_msg.lower():
-                error_msg = "Ошибка ffmpeg. Запустите install_dependencies.py для установки."
+                    info = ydl.extract_info(url, download=False)
 
-            self.update_status("❌ Ошибка", self.accent)
-            self.root.after(0, lambda: messagebox.showerror("Ошибка", f"❌ {error_msg}"))
+                    if self.is_cancelled:
+                        self.update_status("⏹ Отменено", self.warning_color)
+                        self.root.after(0, self.reset_ui)
+                        return
 
-        finally:
-            self.root.after(0, self.reset_ui)
+                    title = info.get('title', 'Неизвестное название')
+                    self.update_status(f"⬇ Загрузка: {title[:50]}...")
+                    ydl.download([url])
+
+                self.update_status("✅ Готово!", self.success_color)
+                self.root.after(0, lambda: messagebox.showinfo(
+                    "Успешно", f"✅ Видео сохранено!\n\n📁 {output_dir}"
+                ))
+                self.root.after(0, self.reset_ui)
+                return
+
+            except Exception as e:
+                if self.is_cancelled:
+                    self.update_status("⏹ Отменено", self.warning_color)
+                    self.root.after(0, self.reset_ui)
+                    return
+
+                error_msg = str(e)
+                is_reset = any(x in error_msg.lower() for x in [
+                    "remote end closed", "forcibly closed", "winerror",
+                    "timeout", "timed out", "connection reset", "10054", "10053",
+                    "connection aborted", "errno 104", "ssl_certificate",
+                ])
+
+                if is_reset and attempt < max_attempts:
+                    self.update_status(f"⚠️ Сбой. Повтор через 3 сек...")
+                    time.sleep(3)
+                    continue
+
+                if "HTTP Error 403" in error_msg:
+                    error_msg = "Доступ запрещён (403)."
+                elif "HTTP Error 429" in error_msg:
+                    error_msg = "Слишком много запросов."
+                elif "Private video" in error_msg:
+                    error_msg = "Приватное видео."
+                elif "ssl_certificate" in error_msg.lower():
+                    error_msg = "Ошибка SSL. Обновите сертификаты: pip install --upgrade certifi"
+                elif is_reset:
+                    error_msg = "YouTube заблокирован. Включите VPN."
+
+                self.update_status("❌ Ошибка", self.accent)
+                self.root.after(0, lambda: messagebox.showerror("Ошибка", f"❌ {error_msg}"))
+                break
+
+        self.root.after(0, self.reset_ui)
 
     def progress_hook(self, d):
+        if self.is_cancelled:
+            raise Exception("Загрузка отменена пользователем")
+
         if d['status'] == 'downloading':
             percent = d.get('_percent_str', '').strip()
             speed = d.get('_speed_str', '')
@@ -425,30 +534,10 @@ class VideoDownloaderApp:
                 status += f" | {speed}"
             if eta:
                 status += f" | Осталось: {eta}"
-            self.update_status(status, self.warning_color)
+            self.update_status(status)
         elif d['status'] == 'finished':
-            self.update_status("🔄 Обработка файла...", self.warning_color)
+            self.update_status("🔄 Обработка...")
 
-    def update_status(self, text, color=None):
-        if color is None:
-            color = self.warning_color
-        self.root.after(0, lambda: self.status_label.config(text=text, fg=color))
-
-    def reset_ui(self):
-        self.download_btn.config(state="normal", text="⬇ СКАЧАТЬ")
-        self.progress_bar.stop()
-        self.progress_bar.pack_forget()
-
-    def warmup_connection(self):
-        """Прогрев соединения для обхода DPI"""
-        import socket
-        try:
-            # Быстрое подключение к Rutube или VK
-            socket.create_connection(("rutube.ru", 443), timeout=3)
-            socket.create_connection(("vk.ru", 443), timeout=3)
-            self.update_status("🔄 Обход блокировки...", self.warning_color)
-        except:
-            pass
 
 if __name__ == "__main__":
     root = tk.Tk()
